@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QComboBox, QScrollArea,
     QFrame, QCheckBox, QMessageBox, QSizePolicy, QGraphicsDropShadowEffect
 )
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtSignal, QSize, QEvent
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtSignal, QSize, QEvent, QTimer
 from PyQt6.QtGui import QFont, QColor, QPalette, QIcon
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -393,9 +393,12 @@ class MainWindow(QMainWindow):
         self.hide()
 
     def changeEvent(self, event):
-        if event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
-            event.ignore()
-            self.hide()
+        if (
+            event.type() == QEvent.Type.WindowStateChange
+            and self.isMinimized()
+            and not self.force_quit
+        ):
+            QTimer.singleShot(0, self.hide)
             return
 
         super().changeEvent(event)
@@ -621,6 +624,16 @@ def make_tray_icon():
     return QIcon(px)
 
 
+def show_window(win):
+    win.setWindowState(
+        (win.windowState() & ~Qt.WindowState.WindowMinimized)
+        | Qt.WindowState.WindowActive
+    )
+    win.showNormal()
+    win.raise_()
+    win.activateWindow()
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -629,22 +642,31 @@ if __name__ == "__main__":
     app.setStyle("Fusion")
     # Stay alive when the window is closed
     app.setQuitOnLastWindowClosed(False)
+    app.setApplicationName("My Tasks")
 
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor("#F5F4F0"))
     app.setPalette(palette)
 
+    tray_icon = make_tray_icon()
+    app.setWindowIcon(tray_icon)
+
     win = MainWindow()
+    win.setWindowIcon(tray_icon)
     win.show()
 
     # ── Tray icon + menu ──
-    tray = QSystemTrayIcon(make_tray_icon(), parent=app)
+    if not QSystemTrayIcon.isSystemTrayAvailable():
+        QMessageBox.critical(None, "System tray unavailable", "System tray is not available.")
+        sys.exit(1)
+
+    tray = QSystemTrayIcon(tray_icon, parent=app)
     tray.setToolTip("My Tasks")
 
     tray_menu = QMenu()
 
     show_action = tray_menu.addAction("Show")
-    show_action.triggered.connect(lambda: (win.show(), win.raise_(), win.activateWindow()))
+    show_action.triggered.connect(lambda: show_window(win))
 
     hide_action = tray_menu.addAction("Hide")
     hide_action.triggered.connect(win.hide)
@@ -662,11 +684,14 @@ if __name__ == "__main__":
             if win.isVisible():
                 win.hide()
             else:
-                win.show()
-                win.raise_()
-                win.activateWindow()
+                show_window(win)
 
     tray.activated.connect(tray_activated)
     tray.show()
+
+    # Keep strong references alive in packaged builds.
+    app.main_window = win
+    app.tray_icon = tray
+    app.tray_menu = tray_menu
 
     sys.exit(app.exec())
