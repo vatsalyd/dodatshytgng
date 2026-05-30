@@ -1,0 +1,12 @@
+build/
+dist/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+*.db
+*.sqlite
+*.sqlite3
+.venv/
+venv/
